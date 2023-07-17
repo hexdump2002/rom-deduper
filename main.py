@@ -37,3 +37,5 @@ parserB.add_argument('--delete-output-folder', required=False, action='store_tru
 args = parser.parse_args()
 if hasattr(args, 'func'):
     args.func(args)
+
+print("Done.")

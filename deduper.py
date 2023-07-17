@@ -5,8 +5,9 @@ import pathlib
 import re
 import shutil
 import os.path as p
+import sys
 import time
-from typing import List
+from typing import List, Dict
 
 from enum import Enum
 
@@ -21,10 +22,11 @@ class Find(Enum):
 
 class GameFile:
 
-    def __init__(self, absPath:str, comparableFileName:str):
+    def __init__(self, absPath:str, comparableFileName:str, extraData:Dict={}):
         self.absPath = absPath
         self.baseName = os.path.basename(absPath)
         self.comparableFileName = comparableFileName
+        self.extraData = extraData
 
 class GameGroup:
 
@@ -331,6 +333,30 @@ def dedupFolder(args):
 
     print("Done!")
 
+def _removeGamesFromXML(parentNode, gamesToRemove:List):
+    for game in gamesToRemove:
+        parentNode.remove(game.extraData['node'])
+
+def _handleInconsistenciesFound(gamesNotInSyncWithRomFolder:[], xmlTree, gameListPath:str):
+    exit: bool = False
+    xmlRootNode = xmlTree.getroot();
+    while not exit:
+        print("The gamelist.xml file contains %s games that are not pressent in rom folder. Press L to list inconsistencies or Y or N to continue (Y/N/Q/L)" % len(gamesNotInSyncWithRomFolder))
+        text = sys.stdin.read().strip()
+        if text == 'y' or text == 'Y':
+            _removeGamesFromXML(xmlRootNode, gamesNotInSyncWithRomFolder)
+            xmlTree.write(str(gameListPath))
+            exit = True
+        elif text == 'n' or text == 'N':
+            print("Continuing withou removing inconsistencies from gamelist")
+            exit = True
+        elif text == 'q' or text == 'Q':
+            return
+        elif text == 'l' or text == 'L':
+            print("Listing inconsistencies...")
+            for game in gamesNotInSyncWithRomFolder:
+                print(game.absPath)
+
 def dedupGameList(args):
     gameList:str=args.game_list
     romFolder:str=args.rom_folder
@@ -348,20 +374,27 @@ def dedupGameList(args):
 
     elements = root.findall('./game')
 
+    gamesNotInSyncWithRomFolder: List = []
+
     games = []
     for element in elements:
         path = element.find("path").text
         name = element.find("name").text
         path = os.path.join(romFolder,os.path.basename(path))
-        games.append(GameFile(path,name))
 
+        if not os.path.exists(path):
+            gamesNotInSyncWithRomFolder.append(GameFile(path, name, extraData={"node": element}))
+        else:
+            games.append(GameFile(path, name, extraData={"node": element}))
+
+    if len(gamesNotInSyncWithRomFolder)>0:
+        _handleInconsistenciesFound(gamesNotInSyncWithRomFolder, tree,gameList)
 
     totalFileCount: int = len(games)
 
     if totalFileCount == 0:
         print("Could not find any rom to process in %s." % romFolder)
-        print("Done.")
-        exit(0)
+        return
 
     if deleteOutputFolder and os.path.exists(outputFolder):
         print("Deleting output folder %s" % outputFolder)
@@ -385,7 +418,15 @@ def dedupGameList(args):
 
     _dedupGameListPrintReport(reportGeneral, clonesResport,gamesTotalCount, gamesTotalSize, gameGroups, bestVers, gamesToRemove)
 
-    if outputFolder:
-        _moveFiles(outputFolder, gamesToRemove, 0)
+    if len(gamesToRemove) > 0:
+        if outputFolder:
+            print("Moving duplicates to %s" % outputFolder)
+            _moveFiles(outputFolder, gamesToRemove, 0)
 
-    print("Done!")
+        print("Removing entries from gamelist %s" % gameList)
+        _removeGamesFromXML(root, gamesToRemove)
+        tree.write(gameList)
+
+    else:
+        print("No duplicates to move. Everything seems clean.")
+
