@@ -338,24 +338,28 @@ def _removeGamesFromXML(parentNode, gamesToRemove:List):
         parentNode.remove(game.extraData['node'])
 
 def _handleInconsistenciesFound(gamesNotInSyncWithRomFolder:[], xmlTree, gameListPath:str):
+    exitProgram:bool = False
     exit: bool = False
     xmlRootNode = xmlTree.getroot();
     while not exit:
-        print("The gamelist.xml file contains %s games that are not pressent in rom folder. Press L to list inconsistencies or Y or N to continue (Y/N/Q/L)" % len(gamesNotInSyncWithRomFolder))
-        text = sys.stdin.read().strip()
-        if text == 'y' or text == 'Y':
+        text="The gamelist.xml file contains %s games that are not pressent in rom folder. Press L to list inconsistencies or Y or N to continue (Y/N/Q/L)" % len(gamesNotInSyncWithRomFolder)
+        data = input(text)
+        if data == 'y' or data == 'Y':
             _removeGamesFromXML(xmlRootNode, gamesNotInSyncWithRomFolder)
             xmlTree.write(str(gameListPath))
             exit = True
-        elif text == 'n' or text == 'N':
+        elif data == 'n' or data == 'N':
             print("Continuing withou removing inconsistencies from gamelist")
             exit = True
-        elif text == 'q' or text == 'Q':
-            return
-        elif text == 'l' or text == 'L':
+        elif data == 'q' or data == 'Q':
+            exitProgram = True
+            exit = True
+        elif data == 'l' or data == 'L':
             print("Listing inconsistencies...")
             for game in gamesNotInSyncWithRomFolder:
                 print(game.absPath)
+
+    return exitProgram
 
 def dedupGameList(args):
     gameList:str=args.game_list
@@ -388,7 +392,9 @@ def dedupGameList(args):
             games.append(GameFile(path, name, extraData={"node": element}))
 
     if len(gamesNotInSyncWithRomFolder)>0:
-        _handleInconsistenciesFound(gamesNotInSyncWithRomFolder, tree,gameList)
+        exitProgram = _handleInconsistenciesFound(gamesNotInSyncWithRomFolder, tree,gameList)
+        if exitProgram:
+            return
 
     totalFileCount: int = len(games)
 
