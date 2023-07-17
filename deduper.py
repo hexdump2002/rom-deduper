@@ -353,7 +353,11 @@ def dedupGameList(args):
         path = element.find("path").text
         name = element.find("name").text
         path = os.path.join(romFolder,os.path.basename(path))
-        games.append(GameFile(path,name))
+
+        if not os.path.exists(path):
+            print("WARNING: game %s metadata exists in gamelist but file is not in rom folder. This could be produced because rom was removed while the metadata still exists in the gamelist file" % path)
+        else:
+            games.append(GameFile(path,name))
 
 
     totalFileCount: int = len(games)
