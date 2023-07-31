@@ -1,6 +1,7 @@
 import argparse
 import pathlib
 
+import cd2chd
 import deduper
 
 
@@ -9,6 +10,9 @@ def dedupFolder(args):
 
 def dedupGameList(args):
     deduper.dedupGameList(args)
+
+def cd2chdAction(args):
+    cd2chd.convert(args)
 
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers()
@@ -33,6 +37,12 @@ parserB.add_argument('--output-folder', type=pathlib.Path, required=False, help=
 parserB.add_argument('--general-report', required=False, action='store_true', help='Print general report')
 parserB.add_argument('--clones-report', required=False, action='store_true', help='Print clones report')
 parserB.add_argument('--delete-output-folder', required=False, action='store_true',default=0, help="Delete output folder before outputing duplicated roms")
+
+parserB = subparsers.add_parser('cd2chd',help='Give a folder or a file name (iso, cue, img,ccd) to convert cd images')
+parserB.set_defaults(func=cd2chdAction)
+parserB.add_argument('--source-files', type=pathlib.Path, required=True, help='Can be a folder or a file')
+parserB.add_argument('--output-folder', type=pathlib.Path, required=False, help='Removed roms folder. The movement of roms will be performed if this param is given')
+parserB.add_argument('--delete-original', required=False, action='store_true',default=0, help="Delete original iso images to save space")
 
 args = parser.parse_args()
 if hasattr(args, 'func'):
