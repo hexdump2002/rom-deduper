@@ -2,22 +2,15 @@ import argparse
 import fnmatch
 import os.path
 import pathlib
-import re
+
 import shutil
 import os.path as p
 import sys
 import time
-from typing import List, Dict
-
-from enum import Enum
+from typing import List, Dict, Callable
 
 import xml.etree.ElementTree as ET
 from fuzzywuzzy import fuzz
-
-
-class Find(Enum):
-    WORD = 0
-    REGEX= 1
 
 
 class GameFile:
@@ -30,8 +23,9 @@ class GameFile:
 
 class GameGroup:
 
-    def __init__(self):
+    def __init__(self, gameRatingFunc):
         self.games:List[GameFile] = []
+        self.gameRatingFunc:Callable[[str],int] = gameRatingFunc
 
     def addGame(self, game:GameFile):
         self.games.append(game)
@@ -42,12 +36,12 @@ class GameGroup:
 
         bestVer:GameFile = self.games[0]
 
-        bestVerRating= _getRatingForGameName(bestVer.baseName)
+        bestVerRating = self.gameRatingFunc(bestVer.baseName)
         #print("*Checking: %s -> %s" % (bestVer,bestVerRating))
 
         restOfFiles:List[GameFile] = self.games[1:]
         for game in restOfFiles:
-            currentVerRating = _getRatingForGameName(game.baseName)
+            currentVerRating = self.gameRatingFunc(game.baseName)
             #print("*Checking: %s -> %s" % (game.absPath, currentVerRating))
             if currentVerRating > bestVerRating:
                 bestVer = game
@@ -82,72 +76,9 @@ class Comparers:
 
 def  _getNameToCompare(name:str, removeCharsFromStartCount:int):
     name = name[removeCharsFromStartCount:]
-    name=name.replace("'","_") #do this because some sets come with these to symbols to diferentiate versions
+    name=name.replace("'","_") #do this because some sets come with these two symbols to diferentiate versions
     parts = name.split("(")
     return parts[0].strip()
-
-def _findWords(searchWords:[[]], text, trueIfAll=False):
-
-    found = False
-    for search in searchWords:
-        word = search[0]
-        matchFound = False
-        if search[1]==Find.WORD:
-            result = re.search(rf'\b{word}\b',text, re.IGNORECASE)
-            matchFound = result is not None
-        elif search[1]==Find.REGEX:
-            result = re.search(rf'{word}', text, re.IGNORECASE)
-            matchFound = result is not None
-        else:
-            assert False
-
-        if matchFound:
-            found = True;
-            if not trueIfAll:
-                break
-        else:
-            if trueIfAll:
-                found=False
-                break;
-
-    return found
-
-def _getRatingForGameName(name):
-    points = 0
-
-    name = name.lower()
-
-    isJap=False
-    if _findWords([["europe", Find.WORD], ["eur", Find.WORD], ["\(E\)", Find.REGEX]], name): points += 50
-    if _findWords([["japan", Find.WORD], ["jap", Find.WORD], ["\(J\)", Find.REGEX]], name):   points += 10; isJap=True
-    if _findWords([["usa", Find.WORD], ["\(U\)", Find.REGEX], ["australia", Find.WORD]], name): points += 30
-    if _findWords([["world", Find.WORD]], name): points += 20
-    if _findWords([["beta", Find.WORD]], name): points -=30
-    if _findWords([["\(proto.*?\)", Find.REGEX]], name): points -= 50
-    if _findWords([["spain", Find.WORD]], name): points += 100
-    if _findWords([["\[!\]", Find.REGEX]], name): points += 40
-    if _findWords([["\[b\d{0,2}\]", Find.REGEX]], name): points -= 40
-    if _findWords([["\[h\d{0,2}\]", Find.REGEX]], name): points -= 100
-    if _findWords([["\(UE\)", Find.REGEX], ["\(EU\)", Find.REGEX]], name): points+=50
-    if _findWords([["\(UJ\)", Find.REGEX], ["(JU)", Find.REGEX]], name): points += 30
-    if _findWords([["\[a\d{0,2}(?![-\w])\]", Find.REGEX]], name): points-=10
-    if _findWords([["\[o\d{0,2}(?![-\w])\]", Find.REGEX]], name): points -= 10 #Overdump
-
-    if _findWords([["\[t\-eng.*?\]", Find.REGEX]], name):
-        points += 50
-    elif _findWords([["\[t\-spa.*?\]", Find.REGEX]], name): points += 60
-    elif _findWords([["\[t\-.*?\]", Find.REGEX]], name):
-        if isJap:
-            points += 40
-        else:
-            points -=40
-
-    if _findWords([["partial", Find.REGEX]], name):
-        points-=10
-
-    if _findWords([["\[t\d{0,2}(?![-\w])\]", Find.REGEX]], name): points -= 20 #No trainers please
-
-    return points
 
 def _calculateSizeOfFilesInBytes(gameFiles:List[GameFile]):
     totalSize = 0
@@ -171,7 +102,7 @@ def _dedupFolderPrintReport(generalReport:bool, clonesReport:bool, totalFileCoun
 
             print("# Originals ->  File Count: %s Total Size: %s" % (totalFileCount, _convertBytesToMBStr(totalFileSize)))
             print("# De duplicated -> File Count: %s TotalSize: %s" % (len(gameGroups), _convertBytesToMBStr(bestVersSize)))
-            print("# Total games removed: %s Total space saved: %s" % (totalFileCount - len(gameGroups), _convertBytesToMBStr(totalFileSize - bestVersSize)))
+            print("# Total games to remove: %s Total space saved: %s" % (totalFileCount - len(gameGroups), _convertBytesToMBStr(totalFileSize - bestVersSize)))
 
         if clonesReport:
             print("Info: Writing clones report...")
@@ -222,7 +153,7 @@ def _dedupGameListPrintReport(generalReport:bool, clonesReport:bool,gamesTotalCo
                             print("## [X] %s" % game.absPath)
                     print("##################################################################################")
 
-def _calculateDuplicates(games:List[GameFile]) -> List[GameGroup]:
+def _calculateDuplicates(games:List[GameFile],gameRaterFunc:Callable[[str],int]) -> List[GameGroup]:
     print("Calculating duplicates...")
     clonedGameList = [];
     clonedGameList.extend(games)
@@ -232,7 +163,7 @@ def _calculateDuplicates(games:List[GameFile]) -> List[GameGroup]:
 
     while len(games) > 0:
         if len(games) == 1:
-            group = GameGroup()
+            group = GameGroup(gameRaterFunc)
             group.addGame(games[0])
             gameGroups.append(group)
             break;
@@ -240,7 +171,7 @@ def _calculateDuplicates(games:List[GameFile]) -> List[GameGroup]:
         file = games[0]
 
         fileName = file.comparableFileName
-        group = GameGroup()
+        group = GameGroup(gameRaterFunc)
         group.addGame(file)
         for index in range(1, len(games)):
             choice = games[index].comparableFileName
@@ -280,7 +211,7 @@ def _copyAndMoveFiles(outputFolder:str, games:[], exportRemoveCharCount:int, cop
                     print("Moving %s to %s (%s/%s)" % (game.absPath, outputFolder, i+1, len(games)))
                     shutil.move(game.absPath, os.path.join(outputFolder, exportingName))
 
-def dedupFolder(args):
+def dedupFolder(args, gameRaterFunc: Callable[[str],int], validGame: Callable[[str],bool]):
     searchPath = args.rom_folder
     outputPath = args.output_folder
 
@@ -297,7 +228,13 @@ def dedupFolder(args):
 
         for file in filesGenerator:
             absPath: str = str(file)
-            games.append(GameFile(absPath, _getNameToCompare(os.path.basename(absPath), compareRemoveCharCount)))
+            fileName = os.path.basename(absPath)
+            name =  _getNameToCompare(fileName, compareRemoveCharCount)
+            if validGame(fileName):
+                games.append(GameFile(absPath, name))
+            else:
+                print(f"Discarting game {absPath} because function game validator said so")
+                pass
 
     totalFileSize = _calculateSizeOfFilesInBytes(games)
 
@@ -312,7 +249,7 @@ def dedupFolder(args):
         print("Deleting output folder %s" % outputPath)
         shutil.rmtree(outputPath)
 
-    gameGroups = _calculateDuplicates(games)
+    gameGroups = _calculateDuplicates(games,gameRaterFunc)
     print("Found %s duplicates..." % (totalFileCount - len(gameGroups)))
 
     bestVers: [] = []
@@ -361,7 +298,7 @@ def _handleInconsistenciesFound(gamesNotInSyncWithRomFolder:[], xmlTree, gameLis
 
     return exitProgram
 
-def dedupGameList(args):
+def dedupGameList(args, fileRatingFunc):
     gameList:str=args.game_list
     romFolder:str=args.rom_folder
     outputFolder:str=args.output_folder

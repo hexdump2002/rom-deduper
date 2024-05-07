@@ -4,9 +4,10 @@ import pathlib
 import cd2chd
 import deduper
 
+from  rating_functions import DSFilesRating,DSValidateGame
 
 def dedupFolder(args):
-    deduper.dedupFolder(args)
+    deduper.dedupFolder(args, DSFilesRating, DSValidateGame)
 
 def dedupGameList(args):
     deduper.dedupGameList(args)
@@ -44,8 +45,12 @@ parserB.add_argument('--source-files', type=pathlib.Path, required=True, help='C
 parserB.add_argument('--output-folder', type=pathlib.Path, required=False, help='Removed roms folder. The movement of roms will be performed if this param is given')
 parserB.add_argument('--delete-original', required=False, action='store_true',default=0, help="Delete original iso images to save space")
 
+
 args = parser.parse_args()
 if hasattr(args, 'func'):
     args.func(args)
 
 print("Done.")
+
+
+
